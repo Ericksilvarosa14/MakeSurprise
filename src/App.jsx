@@ -179,6 +179,28 @@ const App = () => {
                         window.open(linkZap, '_blank');
                     }, 2500);
                 }
+                            // Variável com o total exato (produtos + frete)
+            const valorTotalFormatado = orderTotal.toFixed(2).replace('.', ',');
+
+            // Lógica de texto baseada no método de pagamento
+            let textoPagamento = "";
+
+            if (paymentMethod === 'pix') {
+                textoPagamento = "Gerei o pedido com pagamento via PIX. Segue o comprovante da transferência!";
+            } else if (paymentMethod === 'credit') {
+                textoPagamento = "Escolhi pagar no Cartão de Crédito. Pode me enviar o link de pagamento seguro, por favor?";
+            } else if (paymentMethod === 'debit') {
+                textoPagamento = "Escolhi pagar no Cartão de Débito. Pode me enviar o link de pagamento seguro, por favor?";
+            }
+
+            // Montagem final da mensagem que vai para o WhatsApp
+            const mensagemWhatsApp = `Olá! Acabei de finalizar meu pedido da Scoop Surpresa.%0A%0A` +
+                `*Nome:* ${formData.name}%0A` +
+                `*Total do Pedido:* R$ ${valorTotalFormatado} (com frete)%0A%0A` +
+                `${textoPagamento}`;
+
+            const linkWhatsApp = `https://wa.me/5500000000000?text=${mensagemWhatsApp}`;
+            window.open(linkWhatsApp, '_blank');
             }
         } catch (error) {
             console.error("Erro ao salvar: ", error);
