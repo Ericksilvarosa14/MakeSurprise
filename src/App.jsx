@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-    ShoppingBag, Sparkles, Gift, Video, Info, Star, Users, Lock, LogOut, ShoppingCart, MessageCircle 
+    ShoppingBag, Sparkles, Gift, Video, Info, Star, Lock, LogOut, ShoppingCart, MessageCircle 
 } from 'lucide-react';
 
 import { INITIAL_PRODUCTS, SCOOP_PRODUCT } from './data/mockData';
@@ -12,7 +12,6 @@ import Toast from './components/Toast';
 import CartSidebar from './components/CartSidebar';
 import LoginModal from './components/LoginModal';
 import ImageCarousel from './components/ImageCarousel';
-import ShippingCalculator from './components/ShippingCalculator';
 
 import AdminPanel from './pages/AdminPanel';
 import Market from './pages/Market';
@@ -29,8 +28,6 @@ const App = () => {
     const [isAdminLogged, setIsAdminLogged] = useState(false);
     const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
     const [showSuccessModal, setShowSuccessModal] = useState(false);
-    const [loggedUser, setLoggedUser] = useState(null);
-    const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
 
     const [scoopQty, setScoopQty] = useState(1);
     const [dbProducts, setDbProducts] = useState([]);
@@ -81,14 +78,12 @@ const App = () => {
             }
         });
 
-        // Puxa a meta do frete grátis do banco
         const unsubConfig = onSnapshot(doc(db, "configuracoes", "frete"), (docSnap) => {
             if (docSnap.exists() && docSnap.data().threshold !== undefined) {
                 setFreeShippingThreshold(Number(docSnap.data().threshold));
             }
         });
 
-        // Puxa as redes sociais do banco
         const unsubSocial = onSnapshot(doc(db, "configuracoes", "redes"), (docSnap) => {
             if (docSnap.exists()) {
                 setSocialLinks({
@@ -129,8 +124,8 @@ const App = () => {
         setIsLoginModalOpen(true);
     };
 
-    const handleLoginSubmit = async (userData) => {
-        setLoggedUser(userData);
+    // A MÁQUINA DE FINALIZAÇÃO E LIMPEZA DE ESTADO
+    const handleFinalizeOrder = async (userData) => {
         setIsLoginModalOpen(false);
 
         try {
@@ -164,43 +159,36 @@ const App = () => {
                 };
                 
                 await addDoc(collection(db, "pedidos"), newOrder);
-                setCartItems([]);
                 
+                // Limpeza do carrinho destrói o bug da segunda compra
+                setCartItems([]);
                 setShowSuccessModal(true); 
 
-                // Redirecionamento Dinâmico para o WhatsApp do Admin
                 const rawWhatsapp = String(socialLinks?.whatsapp || '').replace(/\D/g, '');
                 
                 if (rawWhatsapp.length >= 10) {
-                    const textoMsg = `Olá! Acabei de finalizar um pedido no site no valor de R$ ${finalTotal.toFixed(2).replace('.', ',')}. Meu nome é ${userData?.name || 'Cliente'}. Aguardo as instruções para pagamento e o meu vídeo!`;
-                    const linkZap = `https://wa.me/55${rawWhatsapp}?text=${encodeURIComponent(textoMsg)}`;
+                    const valorTotalFormatado = finalTotal.toFixed(2).replace('.', ',');
+                    let textoPagamento = "";
+
+                    if (userData.paymentMethod === 'pix') {
+                        textoPagamento = "Gerei o pedido com pagamento via PIX. Segue o comprovante da transferência!";
+                    } else if (userData.paymentMethod === 'credit') {
+                        textoPagamento = "Escolhi pagar no Cartão de Crédito. Pode me enviar o link de pagamento seguro, por favor?";
+                    } else if (userData.paymentMethod === 'debit') {
+                        textoPagamento = "Escolhi pagar no Cartão de Débito. Pode me enviar o link de pagamento seguro, por favor?";
+                    }
+
+                    const mensagemWhatsApp = `Olá! Acabei de finalizar meu pedido da Scoop Surpresa.%0A%0A` +
+                        `*Nome:* ${userData.name}%0A` +
+                        `*Total do Pedido:* R$ ${valorTotalFormatado} (com frete)%0A%0A` +
+                        `${textoPagamento}`;
+
+                    const linkWhatsApp = `https://wa.me/55${rawWhatsapp}?text=${mensagemWhatsApp}`;
                     
                     setTimeout(() => {
-                        window.open(linkZap, '_blank');
+                        window.open(linkWhatsApp, '_blank');
                     }, 2500);
                 }
-                            // Variável com o total exato (produtos + frete)
-            const valorTotalFormatado = orderTotal.toFixed(2).replace('.', ',');
-
-            // Lógica de texto baseada no método de pagamento
-            let textoPagamento = "";
-
-            if (paymentMethod === 'pix') {
-                textoPagamento = "Gerei o pedido com pagamento via PIX. Segue o comprovante da transferência!";
-            } else if (paymentMethod === 'credit') {
-                textoPagamento = "Escolhi pagar no Cartão de Crédito. Pode me enviar o link de pagamento seguro, por favor?";
-            } else if (paymentMethod === 'debit') {
-                textoPagamento = "Escolhi pagar no Cartão de Débito. Pode me enviar o link de pagamento seguro, por favor?";
-            }
-
-            // Montagem final da mensagem que vai para o WhatsApp
-            const mensagemWhatsApp = `Olá! Acabei de finalizar meu pedido da Scoop Surpresa.%0A%0A` +
-                `*Nome:* ${formData.name}%0A` +
-                `*Total do Pedido:* R$ ${valorTotalFormatado} (com frete)%0A%0A` +
-                `${textoPagamento}`;
-
-            const linkWhatsApp = `https://wa.me/5500000000000?text=${mensagemWhatsApp}`;
-            window.open(linkWhatsApp, '_blank');
             }
         } catch (error) {
             console.error("Erro ao salvar: ", error);
@@ -231,7 +219,6 @@ const App = () => {
         return <AdminPanel onLogout={() => { setIsAdminLogged(false); setCurrentTab('home'); }} dbProducts={dbProducts || []} setDbProducts={setDbProducts} dbOrders={dbOrders || []} dbClients={dbClients || []} />;
     }
 
-    // Limpeza de variáveis para evitar tela branca
     const dynamicInstagram = String(socialLinks?.instagram || '').trim();
     const dynamicWhatsapp = String(socialLinks?.whatsapp || '').replace(/\D/g, '');
 
@@ -251,8 +238,6 @@ const App = () => {
                     </div>
 
                     <div className="flex items-center gap-3 sm:gap-4">
-                        
-                        {/* ÍCONE DO INSTAGRAM EM DEGRADÊ - Puxando do Banco de Dados */}
                         {dynamicInstagram !== "" && (
                             <a href={dynamicInstagram} target="_blank" rel="noreferrer" 
                                className="flex items-center justify-center w-10 h-10 bg-gradient-to-tr from-pink-500 to-purple-500 text-white rounded-full shadow-md hover:scale-110 transition-transform">
@@ -264,32 +249,7 @@ const App = () => {
                             </a>
                         )}
 
-                        <div className="relative hidden sm:flex items-center">
-                            <button onClick={() => loggedUser ? setIsUserMenuOpen(!isUserMenuOpen) : setIsLoginModalOpen(true)} className="text-slate-500 hover:text-pink-500 flex items-center gap-2 text-sm font-medium transition-colors">
-                                <Users className="w-5 h-5"/> {loggedUser?.name ? 'Minha Conta' : 'Entrar'}
-                            </button>
-                            
-                            {isUserMenuOpen && loggedUser && (
-                                <>
-                                    <div className="fixed inset-0 z-40" onClick={() => setIsUserMenuOpen(false)}></div>
-                                    <div className="absolute right-0 top-full mt-3 w-56 bg-white rounded-2xl shadow-xl border border-slate-100 p-2 z-50 animate-in slide-in-from-top-2">
-                                        <div className="px-3 py-3 border-b border-slate-100 mb-1">
-                                            <p className="font-bold text-slate-800 text-sm truncate">{loggedUser?.name || 'Cliente'}</p>
-                                            <p className="text-xs text-slate-500 truncate mt-0.5">{loggedUser?.email || ''}</p>
-                                        </div>
-                                        <button onClick={() => { 
-                                            setLoggedUser(null); 
-                                            setIsUserMenuOpen(false); 
-                                            showToast('Você saiu da conta 👋'); 
-                                        }} className="w-full text-left px-3 py-2.5 text-sm text-red-500 font-medium hover:bg-red-50 rounded-xl flex items-center gap-2 transition-colors">
-                                            <LogOut className="w-4 h-4"/> Sair da Conta
-                                        </button>
-                                    </div>
-                                </>
-                            )}
-                        </div>
-                        <div className="w-px h-6 bg-slate-200 hidden sm:block"></div>
-                        <button onClick={() => setIsCartOpen(true)} className="relative text-slate-700 hover:text-pink-500 transition-colors p-2 bg-slate-100 rounded-full hover:bg-pink-50">
+                        <button onClick={() => setIsCartOpen(true)} className="relative text-slate-700 hover:text-pink-500 transition-colors p-2 bg-slate-100 rounded-full hover:bg-pink-50 ml-2">
                             <ShoppingBag className="w-6 h-6" />
                             {cartCount > 0 && <span className="absolute -top-1 -right-1 bg-pink-500 text-white text-[10px] font-bold rounded-full h-5 w-5 flex items-center justify-center border-2 border-white">{cartCount}</span>}
                         </button>
@@ -427,11 +387,11 @@ const App = () => {
             <LoginModal 
                 isOpen={isLoginModalOpen} 
                 onClose={() => setIsLoginModalOpen(false)} 
-                onLogin={handleLoginSubmit} 
+                onLogin={handleFinalizeOrder} 
                 isCheckout={(cartItems || []).length > 0} 
                 cartTotal={orderTotal || 0} 
                 freeShippingThreshold={freeShippingThreshold || 150}
-                loggedUser={loggedUser}
+                loggedUser={null}
             />
 
             {showSuccessModal && (
@@ -449,7 +409,6 @@ const App = () => {
                 </div>
             )}
 
-            {/* BOTÃO FIXO DO WHATSAPP - Puxando do Banco de Dados */}
             {dynamicWhatsapp.length >= 10 && (
                 <a href={`https://wa.me/55${dynamicWhatsapp}?text=${encodeURIComponent("Olá, equipe MakeSurprise! Estava navegando no site e gostaria de tirar uma dúvida.")}`} target="_blank" rel="noreferrer" 
                     className="fixed bottom-6 right-6 bg-green-500 text-white p-4 rounded-full shadow-2xl hover:scale-110 transition-transform z-50 flex items-center justify-center">

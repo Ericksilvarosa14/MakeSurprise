@@ -1,13 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { X, MapPin, Truck, User, Sparkles, Info, Zap, CreditCard, QrCode, Smartphone, CheckCircle, ShieldCheck } from 'lucide-react';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 
-const LoginModal = ({ isOpen, onClose, onLogin, isCheckout, cartTotal = 0, freeShippingThreshold = 150, loggedUser = null }) => {
+const LoginModal = ({ isOpen, onClose, onLogin, isCheckout, cartTotal = 0, freeShippingThreshold = 150 }) => {
     const [step, setStep] = useState(1);
     const [loadingCep, setLoadingCep] = useState(false);
     
     const [freightOptions, setFreightOptions] = useState({ standard: 0, express: 0 });
     const [selectedFreight, setSelectedFreight] = useState('standard'); 
     const [paymentMethod, setPaymentMethod] = useState('');
+    
+    // Estado para armazenar os preços baixados do banco
+    const [zonasFrete, setZonasFrete] = useState(null);
 
     const ganhouFreteGratis = cartTotal >= freeShippingThreshold;
 
@@ -18,26 +23,34 @@ const LoginModal = ({ isOpen, onClose, onLogin, isCheckout, cartTotal = 0, freeS
     const MEU_CNPJ = "00.000.000/0001-00"; 
     const LINK_QR_CODE = "https://placehold.co/200x200/f8fafc/ec4899?text=Seu+QR+Code+PIX"; 
 
+    // Baixa os valores de frete do Firebase UMA VEZ quando o modal abre
+    useEffect(() => {
+        const fetchFretes = async () => {
+            if (!isOpen) return;
+            try {
+                const docRef = doc(db, 'configuracoes', 'fretes_zonas');
+                const docSnap = await getDoc(docRef);
+                if (docSnap.exists()) {
+                    setZonasFrete(docSnap.data());
+                } else {
+                    setZonasFrete({ zona1: 15, zona2: 25, zona3: 35, zona4: 45, zona5: 55 });
+                }
+            } catch (error) {
+                console.error("Erro ao buscar fretes no Firebase:", error);
+            }
+        };
+        fetchFretes();
+    }, [isOpen]);
+
+    // Como removemos o sistema de login, o modal sempre reseta quando aberto
     useEffect(() => {
         if (isOpen) {
-            if (loggedUser) {
-                setFormData(loggedUser);
-                if (isCheckout) {
-                    setStep(2); 
-                    if (loggedUser.cep) {
-                        searchCep(loggedUser.cep);
-                    }
-                } else {
-                    setStep(1);
-                }
-            } else {
-                setFormData({ name: '', email: '', phone: '', cep: '', street: '', number: '', complement: '', neighborhood: '', city: '', state: '' });
-                setStep(1);
-                setFreightOptions({ standard: 0, express: 0 });
-                setPaymentMethod('');
-            }
+            setFormData({ name: '', email: '', phone: '', cep: '', street: '', number: '', complement: '', neighborhood: '', city: '', state: '' });
+            setStep(1);
+            setFreightOptions({ standard: 0, express: 0 });
+            setPaymentMethod('');
         }
-    }, [isOpen, isCheckout, loggedUser]);
+    }, [isOpen]);
 
     if (!isOpen) return null;
 
@@ -52,22 +65,29 @@ const LoginModal = ({ isOpen, onClose, onLogin, isCheckout, cartTotal = 0, freeS
             try {
                 const res = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`);
                 const data = await res.json();
+                
                 if (!data.erro) {
                     setFormData(prev => ({
                         ...prev,
-                        street: data.logradouro || prev.street,
-                        neighborhood: data.bairro || prev.neighborhood,
+                        street: data.logradouro || '', // Permite vir vazio em cidades do interior
+                        neighborhood: data.bairro || '',
                         city: data.localidade || prev.city,
                         state: data.uf || prev.state
                     }));
                     
-                    let baseCost = 25.90;
-                    if (data.uf === 'PR') baseCost = 12.90;
-                    else if (['SC', 'RS', 'SP'].includes(data.uf)) baseCost = 18.90;
-                    else if (['RJ', 'MG', 'ES'].includes(data.uf)) baseCost = 22.90;
+                    let baseCost = 25.00; 
+                    
+                    if (zonasFrete) {
+                        const uf = data.uf;
+                        if (uf === 'PR') baseCost = Number(zonasFrete.zona1);
+                        else if (['SC', 'RS', 'SP', 'RJ', 'MG', 'ES'].includes(uf)) baseCost = Number(zonasFrete.zona2);
+                        else if (['MS', 'MT', 'GO', 'DF'].includes(uf)) baseCost = Number(zonasFrete.zona3);
+                        else if (['BA', 'PE', 'CE', 'RN', 'PB', 'AL', 'SE', 'PI', 'MA'].includes(uf)) baseCost = Number(zonasFrete.zona4);
+                        else if (['AM', 'PA', 'AC', 'RR', 'RO', 'AP', 'TO'].includes(uf)) baseCost = Number(zonasFrete.zona5);
+                    }
                     
                     let stdCost = baseCost;
-                    let expCost = baseCost + 17.50;
+                    let expCost = baseCost + 17.50; 
                     
                     if (ganhouFreteGratis) {
                         stdCost = 0; 
@@ -75,9 +95,12 @@ const LoginModal = ({ isOpen, onClose, onLogin, isCheckout, cartTotal = 0, freeS
                     
                     setFreightOptions({ standard: stdCost, express: expCost });
                     setSelectedFreight('standard'); 
+                } else {
+                    alert("CEP não encontrado. Por favor, digite os dados do endereço manualmente.");
                 }
             } catch (error) {
                 console.error("Erro ao buscar CEP", error);
+                alert("Erro de conexão ao buscar o CEP. Digite o endereço manualmente.");
             } finally {
                 setLoadingCep(false);
             }
@@ -94,21 +117,17 @@ const LoginModal = ({ isOpen, onClose, onLogin, isCheckout, cartTotal = 0, freeS
 
     const handleNext1 = () => {
         if (formData.name && formData.email && formData.phone) {
-            if (isCheckout) {
-                setStep(2);
-            } else {
-                onLogin(formData);
-            }
+            setStep(2);
         } else {
             alert("Preencha seus dados básicos primeiro!");
         }
     };
 
     const handleNext2 = () => {
-        if (formData.cep && formData.number) {
+        if (formData.cep && formData.number && formData.city && formData.state) {
             setStep(3); 
         } else {
-            alert("Preencha o CEP e o número da residência para prosseguirmos!");
+            alert("Preencha o CEP, Número, Cidade e Estado para prosseguirmos!");
         }
     };
 
@@ -119,7 +138,6 @@ const LoginModal = ({ isOpen, onClose, onLogin, isCheckout, cartTotal = 0, freeS
             freightMethod: selectedFreight,
             paymentMethod: paymentMethod 
         });
-        setStep(1); 
     };
 
     const orderTotal = cartTotal + (freightOptions[selectedFreight] || 0);
@@ -196,7 +214,8 @@ const LoginModal = ({ isOpen, onClose, onLogin, isCheckout, cartTotal = 0, freeS
                                 {loadingCep && <span className="text-xs text-pink-500 mt-1 block">Buscando endereço e fretes...</span>}
                             </div>
 
-                            {formData.street && (
+                            {/* O formulário agora abre assim que a UF (estado) for identificada ou o usuário digitar algo */}
+                            {formData.state && (
                                 <>
                                     <div className="space-y-3 my-4">
                                         <label className="block text-sm font-bold text-slate-700 mb-1">Forma de Envio</label>
@@ -237,7 +256,7 @@ const LoginModal = ({ isOpen, onClose, onLogin, isCheckout, cartTotal = 0, freeS
                                     <div className="grid grid-cols-3 gap-3">
                                         <div className="col-span-2">
                                             <label className="block text-sm font-bold text-slate-700 mb-1">Rua</label>
-                                            <input type="text" name="street" value={formData.street} onChange={handleChange} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none" readOnly={!loggedUser} />
+                                            <input type="text" name="street" value={formData.street} onChange={handleChange} placeholder="Nome da rua" className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:border-pink-500" />
                                         </div>
                                         <div className="col-span-1">
                                             <label className="block text-sm font-bold text-slate-700 mb-1">Número</label>
@@ -253,7 +272,7 @@ const LoginModal = ({ isOpen, onClose, onLogin, isCheckout, cartTotal = 0, freeS
                                     <div className="grid grid-cols-2 gap-3">
                                         <div>
                                             <label className="block text-sm font-bold text-slate-700 mb-1">Bairro</label>
-                                            <input type="text" name="neighborhood" value={formData.neighborhood} className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 outline-none" readOnly={!loggedUser} />
+                                            <input type="text" name="neighborhood" value={formData.neighborhood} onChange={handleChange} placeholder="Nome do bairro" className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:border-pink-500" />
                                         </div>
                                         <div>
                                             <label className="block text-sm font-bold text-slate-700 mb-1">Cidade/UF</label>

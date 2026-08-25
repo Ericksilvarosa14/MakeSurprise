@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Lock, LayoutDashboard, Package, ShoppingCart, Users, LogOut, Plus, Trash2, Edit, Truck, Link as LinkIcon } from 'lucide-react';
+import { Lock, LayoutDashboard, Package, ShoppingCart, Users, LogOut, Plus, Trash2, Edit, Truck, Link as LinkIcon, MapPin } from 'lucide-react';
 import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc } from "firebase/firestore";
 import { db } from "../firebase";
 
@@ -9,6 +9,10 @@ const AdminPanel = ({ onLogout }) => {
     const [editingId, setEditingId] = useState(null);
     const [freeShippingThreshold, setFreeShippingThreshold] = useState(150);
     const [socialLinks, setSocialLinks] = useState({ whatsapp: '', instagram: '' });
+    
+    // Novo Estado para as Zonas de Frete
+    const [fretesConfig, setFretesConfig] = useState({ zona1: 15, zona2: 25, zona3: 35, zona4: 45, zona5: 55 });
+    const [salvandoFreteZonas, setSalvandoFreteZonas] = useState(false);
     
     const [pedidos, setPedidos] = useState([]);
     const [clientes, setClientes] = useState([]);
@@ -44,12 +48,20 @@ const AdminPanel = ({ onLogout }) => {
             }
         });
 
+        // Novo Snapshot para escutar os preços das zonas de frete
+        const unsubConfigFretesZonas = onSnapshot(doc(db, "configuracoes", "fretes_zonas"), (docSnap) => {
+            if (docSnap.exists()) {
+                setFretesConfig(docSnap.data());
+            }
+        });
+
         return () => {
             unsubPedidos();
             unsubClientes();
             unsubProdutos();
             unsubConfigFrete();
             unsubConfigRedes();
+            unsubConfigFretesZonas();
         };
     }, []);
 
@@ -77,6 +89,30 @@ const AdminPanel = ({ onLogout }) => {
             });
             alert("Redes Sociais atualizadas com sucesso!");
         } catch (error) { console.error("Erro", error); }
+    };
+
+    // Nova Função para salvar as Zonas de Frete
+    const handleSalvarFretesZonas = async (e) => {
+        e.preventDefault();
+        setSalvandoFreteZonas(true);
+        try {
+            await setDoc(doc(db, "configuracoes", "fretes_zonas"), {
+                zona1: Number(fretesConfig.zona1),
+                zona2: Number(fretesConfig.zona2),
+                zona3: Number(fretesConfig.zona3),
+                zona4: Number(fretesConfig.zona4),
+                zona5: Number(fretesConfig.zona5)
+            });
+            alert("Valores das Zonas de Frete atualizados com sucesso!");
+        } catch (error) { 
+            console.error("Erro ao salvar zonas de frete:", error); 
+            alert("Erro ao salvar fretes.");
+        }
+        setSalvandoFreteZonas(false);
+    };
+
+    const handleFreteChange = (zona, valor) => {
+        setFretesConfig(prev => ({ ...prev, [zona]: valor }));
     };
 
     const handleSaveProduct = async (e) => {
@@ -187,7 +223,7 @@ const AdminPanel = ({ onLogout }) => {
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
                                 <h3 className="font-bold text-lg mb-4 flex items-center gap-2 text-slate-900">
                                     <Truck className="w-5 h-5 text-pink-500"/> Configuração de Frete Grátis
@@ -199,7 +235,7 @@ const AdminPanel = ({ onLogout }) => {
                                             value={freeShippingThreshold} onChange={e => setFreeShippingThreshold(e.target.value)} />
                                     </div>
                                     <button type="submit" className="w-full py-3 bg-pink-500 hover:bg-pink-600 text-white font-bold rounded-xl transition-colors">
-                                        Salvar Frete
+                                        Salvar Frete Grátis
                                     </button>
                                 </form>
                             </div>
@@ -224,6 +260,43 @@ const AdminPanel = ({ onLogout }) => {
                                     </button>
                                 </form>
                             </div>
+                        </div>
+
+                        {/* Nova Seção de Zonas de Frete */}
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                            <h3 className="font-bold text-lg mb-4 flex items-center gap-2 text-slate-900">
+                                <MapPin className="w-5 h-5 text-indigo-500"/> Configuração de Zonas de Frete (PAC Base)
+                            </h3>
+                            <form onSubmit={handleSalvarFretesZonas} className="space-y-4">
+                                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-bold text-slate-700 mb-1">Zona 1 (PR)</label>
+                                        <input type="number" step="0.01" value={fretesConfig.zona1} onChange={(e) => handleFreteChange('zona1', e.target.value)} className="w-full px-4 py-2 border border-slate-200 rounded-xl outline-none focus:border-indigo-500" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-slate-700 mb-1">Zona 2 (Sul/Sudeste)</label>
+                                        <input type="number" step="0.01" value={fretesConfig.zona2} onChange={(e) => handleFreteChange('zona2', e.target.value)} className="w-full px-4 py-2 border border-slate-200 rounded-xl outline-none focus:border-indigo-500" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-slate-700 mb-1">Zona 3 (Centro-Oeste)</label>
+                                        <input type="number" step="0.01" value={fretesConfig.zona3} onChange={(e) => handleFreteChange('zona3', e.target.value)} className="w-full px-4 py-2 border border-slate-200 rounded-xl outline-none focus:border-indigo-500" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-slate-700 mb-1">Zona 4 (Nordeste)</label>
+                                        <input type="number" step="0.01" value={fretesConfig.zona4} onChange={(e) => handleFreteChange('zona4', e.target.value)} className="w-full px-4 py-2 border border-slate-200 rounded-xl outline-none focus:border-indigo-500" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-slate-700 mb-1">Zona 5 (Norte)</label>
+                                        <input type="number" step="0.01" value={fretesConfig.zona5} onChange={(e) => handleFreteChange('zona5', e.target.value)} className="w-full px-4 py-2 border border-slate-200 rounded-xl outline-none focus:border-indigo-500" />
+                                    </div>
+                                </div>
+                                <button 
+                                    type="submit" 
+                                    disabled={salvandoFreteZonas}
+                                    className="w-full mt-4 bg-slate-900 text-white font-bold py-3 px-6 rounded-xl hover:bg-slate-800 transition-colors disabled:bg-slate-400">
+                                    {salvandoFreteZonas ? 'Salvando...' : 'Salvar Novos Preços de Frete'}
+                                </button>
+                            </form>
                         </div>
                     </div>
                 )}
